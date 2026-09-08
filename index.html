@@ -163,12 +163,12 @@
     <div id="gate">
       <div class="card">
         <h2>시작하기</h2>
-        <p>카카오 지도 JavaScript 키와 가맹점 CSV 파일이 필요합니다. 둘 다 이 브라우저에만 저장되고 외부로 전송되지 않습니다.</p>
+        <p>카카오 JavaScript 키만 넣으면 됩니다. 가맹점 데이터는 자동으로 불러옵니다. 키는 이 브라우저에만 저장되고 외부로 전송되지 않습니다.</p>
 
         <label for="appkey">카카오 JavaScript 키</label>
         <input id="appkey" type="password" placeholder="developers.kakao.com에서 발급한 JavaScript 키" autocomplete="off">
 
-        <label>가맹점 CSV</label>
+        <label>가맹점 데이터 <small style="font-weight:400;color:var(--ink-2)">(자동 로드 — 교체할 때만 사용)</small></label>
         <a class="btn sm" id="portalBtn" href="https://www.gwangju.go.kr/economy/contentsView.do?pageId=economy129" target="_blank" rel="noopener" style="display:inline-block;text-decoration:none;margin-bottom:8px">광주시청 사용처 페이지 열기 ↗</a>
         <div class="drop" id="drop" tabindex="0" role="button">
           <span id="dropText"><b>파일 선택</b> 또는 여기에 끌어다 놓기<br><small>위에서 받은 파일(xlsx 또는 csv)을 이 영역에 끌어다 놓으세요</small></span>
@@ -564,6 +564,25 @@ async function takeFile(f) {
   catch (err) { pendingRows = null; $('gateErr').textContent = '파일을 읽지 못했습니다: ' + err.message; }
   checkReady();
 }
+// 같은 폴더에 sangsaeng_data.json 이 있으면 자동으로 불러온다(파일 첨부 불필요)
+async function autoLoadBundled() {
+  try {
+    const res = await fetch('sangsaeng_data.json', { cache: 'no-cache' });
+    if (!res.ok) return false;
+    const j = await res.json();
+    // 압축 형식 {cols:[...], rows:[[...]]} → 레코드 배열로 변환
+    const cols = j.cols || ['name', 'cat', 'addr'];
+    const key = { name: '업체명', cat: '업종명', addr: '업체주소' };
+    pendingRows = j.rows.map(r => {
+      const o = {}; cols.forEach((c, i) => o[key[c] || c] = r[i]); return o;
+    });
+    $('dropText').innerHTML = `<b>최신 가맹점 데이터 자동 로드됨</b><br><small>${fmt(pendingRows.length)}곳 · 다른 파일을 넣으면 교체됩니다</small>`;
+    $('drop').style.borderColor = 'var(--teal)';
+    checkReady();
+    return true;
+  } catch { return false; }
+}
+autoLoadBundled();
 $('startBtn').onclick = async () => {
   const key = $('appkey').value.trim(); const btn = $('startBtn');
   btn.disabled = true; btn.textContent = '불러오는 중…'; $('gateErr').textContent = '';
