@@ -6,6 +6,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="상생카드지도">
+<meta name="theme-color" content="#0E6B69">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <title>광주상생카드 사용처 지도</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -262,7 +266,8 @@ function normalizeAddr(addr) {
 function parseAddr(addr) {
   const a = addr;
   const gu = (a.match(/([가-힣]+(?:구|군))(?=\s)/) || [])[1] || '';
-  const dong = (a.match(/(?:구|군|시)\s+([가-힣0-9]+(?:동|읍|면|가|로|길))(?=\s|$)/) || [])[1] || '';
+  // 동/읍/면/가 우선(변환된 데이터엔 동이 들어 있음). 없으면 빈 값.
+  const dong = (a.match(/([가-힣0-9]+(?:동|읍|면|가))(?=\s|$|\d)/) || [])[1] || '';
   return { gu, dong };
 }
 function loadRows(records) {
@@ -276,11 +281,13 @@ function loadRows(records) {
   if (!cName || !cAddr) throw new Error(`업체명·주소 열을 찾지 못했습니다. 열 이름: ${H.join(', ')}`);
 
   const rows = []; let id = 0;
+  const cDong = pickCol(H, '동');
   for (const r of records) {
     const name = String(r[cName] ?? '').trim();
     const addr = normalizeAddr(String(r[cAddr] ?? ''));
     if (!name || !addr) continue;
-    const { gu, dong } = parseAddr(addr);
+    let { gu, dong } = parseAddr(addr);
+    if (cDong && String(r[cDong] ?? '').trim()) dong = String(r[cDong]).trim();   // 변환된 동 우선
     let lat = null, lng = null;
     if (cLat && cLng) { const y = parseFloat(r[cLat]), x = parseFloat(r[cLng]); if (isFinite(y) && isFinite(x) && y > 30 && x > 120) { lat = y; lng = x; } }
     if (lat == null && Array.isArray(S.geo[addr])) { [lat, lng] = S.geo[addr]; }
@@ -333,8 +340,13 @@ function buildFilters() {
 }
 function buildDong() {
   const gu = $('gu').value;
-  const dongs = [...new Set(S.rows.filter(r => !gu || r.gu === gu).map(r => r.dong).filter(Boolean))].sort();
-  $('dong').innerHTML = '<option value="">전체 동</option>' + dongs.map(d => `<option>${esc(d)}</option>`).join('');
+  const sel = $('dong');
+  sel.disabled = false;
+  const counts = {};
+  S.rows.forEach(r => { if ((!gu || r.gu === gu) && r.dong) counts[r.dong] = (counts[r.dong] || 0) + 1; });
+  const dongs = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
+  sel.innerHTML = '<option value="">전체 동</option>' +
+    dongs.map(([d, n]) => `<option value="${esc(d)}">${esc(d)} (${fmt(n)})</option>`).join('');
 }
 function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; }
 
@@ -597,7 +609,7 @@ async function autoLoadBundled() {
     const j = await res.json();
     // 압축 형식 {cols:[...], rows:[[...]]} → 레코드 배열로 변환
     const cols = j.cols || ['name', 'cat', 'addr'];
-    const key = { name: '업체명', cat: '업종명', addr: '업체주소' };
+    const key = { name: '업체명', cat: '업종명', addr: '업체주소', dong: '동' };
     pendingRows = j.rows.map(r => {
       const o = {}; cols.forEach((c, i) => o[key[c] || c] = r[i]); return o;
     });
