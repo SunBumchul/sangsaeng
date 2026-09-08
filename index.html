@@ -2,7 +2,10 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="상생카드지도">
 <title>광주상생카드 사용처 지도</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -106,12 +109,32 @@
   .card ol{padding-left:18px;margin:8px 0 0}
   .card code{background:#F1F3F1;padding:1px 5px;border-radius:4px;font-size:12px}
 
+  .sheet-handle{display:none}
   @media (max-width:820px){
-    #app{grid-template-columns:1fr;grid-template-rows:1fr 46vh}
-    #side{order:2;border-right:0;border-top:1px solid var(--line)}
-    #map{order:1}
-    .hd{padding:12px 16px 8px}
+    #app{display:block;position:fixed;inset:0}
+    #map{position:fixed;inset:0;height:100%;order:0}
+    /* 하단 시트: 지도 위에 떠서 위로 끌어올림 */
+    #side{
+      position:fixed;left:0;right:0;bottom:0;z-index:12;
+      height:88vh;                         /* 최대 높이(full) */
+      transform:translateY(var(--sheet-y, calc(88vh - 132px)));  /* 기본 peek 위치 */
+      border-right:0;border-top:0;border-radius:16px 16px 0 0;
+      box-shadow:0 -6px 24px rgba(20,40,38,.18);
+      transition:transform .28s cubic-bezier(.4,0,.2,1);
+      touch-action:none;
+    }
+    #side.dragging{transition:none}
+    .sheet-handle{display:block;width:100%;padding:8px 0 4px;cursor:grab;flex:0 0 auto}
+    .sheet-handle::before{content:"";display:block;width:40px;height:5px;border-radius:3px;background:#C7CFCB;margin:0 auto}
+    .hd{padding:2px 16px 8px}
+    .hd h1{font-size:16px}
     .hd p{display:none}
+    .ctl{padding:8px 16px}
+    .chips{max-height:76px}
+    #list{min-height:0}
+    .ft{flex-wrap:wrap}
+    /* 지도 위 버튼을 시트에 안 가리게 위로 */
+    .float.tl{top:10px;left:10px}
   }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -119,6 +142,7 @@
 <body>
 <div id="app">
   <aside id="side">
+    <div class="sheet-handle" id="sheetHandle" aria-label="목록 끌어올리기"></div>
     <div class="hd">
       <h1>광주<em>상생카드</em> 사용처 지도</h1>
       <p id="hdNote">공공데이터포털 가맹점 현황을 지도에 표시합니다.</p>
@@ -367,8 +391,9 @@ function renderList(reset) {
 $('list').addEventListener('click', e => {
   const it = e.target.closest('.item'); if (!it) return;
   const r = S.rows[+it.dataset.id];
-  if (r.lat == null) { if (S.geocoder) geocodeOne(r).then(ok => ok ? select(r, true) : toast('이 주소는 좌표를 찾지 못했습니다.')); else toast('좌표가 없습니다.'); return; }
-  select(r, true);
+  const reveal = () => { if (window.__sheetPeek) window.__sheetPeek(); };
+  if (r.lat == null) { if (S.geocoder) geocodeOne(r).then(ok => ok ? (select(r, true), reveal()) : toast('이 주소는 좌표를 찾지 못했습니다.')); else toast('좌표가 없습니다.'); return; }
+  select(r, true); reveal();
 });
 
 /* ---------- map ---------- */
@@ -598,6 +623,63 @@ $('startBtn').onclick = async () => {
   } catch (err) { $('gateErr').textContent = err.message; }
   btn.textContent = '지도 열기'; checkReady();
 };
+
+/* ---------- 모바일 하단 시트 드래그 ---------- */
+(function sheet() {
+  const side = $('side'), handle = $('sheetHandle');
+  if (!handle) return;
+  const isMobile = () => window.matchMedia('(max-width:820px)').matches;
+  // 스냅 지점(위에서부터 내려온 거리 px). 값이 클수록 아래로 내려가(닫힘) 지도가 넓게 보임.
+  const snaps = () => {
+    const h = side.offsetHeight;
+    return [8, Math.round(h * 0.45), h - 132];   // full, half, peek
+  };
+  let y = null;   // 현재 translateY
+  const setY = v => { y = v; side.style.setProperty('--sheet-y', v + 'px'); };
+  const nearest = v => snaps().reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a);
+  // 초기 위치(peek)
+  const initPeek = () => { if (isMobile()) setY(snaps()[2]); };
+  window.addEventListener('resize', () => { if (isMobile() && y != null) setY(nearest(y)); if (S.map) S.map.relayout(); });
+  setTimeout(initPeek, 0);
+
+  let startY = 0, startVal = 0, dragging = false;
+  const down = e => {
+    if (!isMobile()) return;
+    dragging = true; side.classList.add('dragging');
+    startY = (e.touches ? e.touches[0].clientY : e.clientY);
+    startVal = y != null ? y : snaps()[2];
+    e.preventDefault();
+  };
+  const move = e => {
+    if (!dragging) return;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY);
+    let v = startVal + (cy - startY);
+    const s = snaps(); v = Math.max(s[0] - 20, Math.min(s[2] + 40, v));
+    setY(v);
+  };
+  const up = () => {
+    if (!dragging) return;
+    dragging = false; side.classList.remove('dragging');
+    setY(nearest(y));
+  };
+  handle.addEventListener('touchstart', down, { passive: false });
+  handle.addEventListener('mousedown', down);
+  window.addEventListener('touchmove', move, { passive: false });
+  window.addEventListener('mousemove', move);
+  window.addEventListener('touchend', up);
+  window.addEventListener('mouseup', up);
+  // 손잡이 탭: peek <-> half 토글
+  let lastTap = 0;
+  handle.addEventListener('click', () => {
+    if (!isMobile()) return;
+    const s = snaps();
+    setY(Math.abs(y - s[2]) < 30 ? s[1] : s[2]);
+  });
+  // 검색창/목록 항목을 누르면 시트를 반쯤 올려 보기 편하게
+  $('q').addEventListener('focus', () => { if (isMobile()) setY(snaps()[1]); });
+  window.__sheetHalf = () => { if (isMobile()) setY(snaps()[1]); };
+  window.__sheetPeek = () => { if (isMobile()) setY(snaps()[2]); };
+})();
 })();
 </script>
 </body>
