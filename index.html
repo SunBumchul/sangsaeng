@@ -154,7 +154,7 @@
 
     <div class="ctl">
       <div class="row">
-        <input id="q" type="search" placeholder="업체명 · 주소 · 동 이름으로 찾기" autocomplete="off">
+        <input id="q" type="search" placeholder="업체명 · 주소 · 동 이름으로 찾기" autocomplete="off" enterkeyhint="search">
       </div>
       <div class="row">
         <select id="gu"><option value="">전체 지역</option></select>
@@ -327,7 +327,7 @@ function buildFilters() {
 
   const counts = {};
   S.rows.forEach(r => counts[r.cat] = (counts[r.cat] || 0) + 1);
-  const cats = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const cats = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   $('cats').innerHTML = cats.map(([c, n]) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}<small>${fmt(n)}</small></button>`).join('');
   $('cats').onclick = e => {
     const b = e.target.closest('.chip'); if (!b) return;
@@ -337,6 +337,7 @@ function buildFilters() {
     apply();
   };
   $('q').oninput = debounce(apply, 200);
+  $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('q').blur(); if (window.__sheetPeek) window.__sheetPeek(); } });
 }
 function buildDong() {
   const gu = $('gu').value;
@@ -434,6 +435,12 @@ function initMap() {
   imgNormal = new kakao.maps.MarkerImage(pinSvg('#0E6B69'), new kakao.maps.Size(26, 36), { offset: new kakao.maps.Point(13, 35) });
   imgSel    = new kakao.maps.MarkerImage(pinSvg('#E0A21B'), new kakao.maps.Size(26, 36), { offset: new kakao.maps.Point(13, 35) });
   kakao.maps.event.addListener(S.map, 'click', () => closeOverlay());
+  // 지도를 만지면 검색창 포커스를 풀어 키보드가 내려가게 함
+  const blurInput = () => { const a = document.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'SELECT')) a.blur(); };
+  $('kakaoMap').addEventListener('touchstart', blurInput, { passive: true });
+  $('kakaoMap').addEventListener('mousedown', blurInput);
+  kakao.maps.event.addListener(S.map, 'dragstart', blurInput);
+  kakao.maps.event.addListener(S.map, 'zoom_start', blurInput);
 }
 function markerFor(r) {
   let m = S.markers.get(r.id);
