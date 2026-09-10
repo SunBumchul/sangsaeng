@@ -42,6 +42,8 @@
   /* controls */
   .ctl{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
   .row{display:flex;gap:8px;align-items:center}
+  .row.filters{flex-wrap:wrap}
+  .row.filters > select{flex:1 1 30%;min-width:96px;width:auto}
   .row > *{min-width:0}
   input[type=search],select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff}
   input[type=search]::-webkit-search-cancel-button{cursor:pointer}
@@ -156,11 +158,11 @@
       <div class="row">
         <input id="q" type="search" placeholder="업체명 · 주소 · 동 이름으로 찾기" autocomplete="off" enterkeyhint="search">
       </div>
-      <div class="row">
+      <div class="row filters">
         <select id="gu"><option value="">전체 지역</option></select>
         <select id="dong"><option value="">전체 동</option></select>
+        <select id="cat"><option value="">전체 업종</option></select>
       </div>
-      <div class="chips" id="cats"></div>
     </div>
 
     <div class="stat">
@@ -239,7 +241,7 @@ const S = {
   rows: [],          // {id,name,cat,addr,gu,dong,lat,lng}
   filtered: [],
   geo: store.get(GEO_KEY) || {},   // addr -> [lat,lng] | 0 (failed)
-  cats: new Set(),   // selected categories
+  cats: null,   // (미사용) 업종은 드롭다운으로 대체됨
   map: null, clusterer: null, geocoder: null, places: null,
   markers: new Map(),   // id -> marker
   overlay: null, selId: null, myMarker: null, myPos: null,
@@ -288,6 +290,7 @@ function loadRows(records) {
     if (!name || !addr) continue;
     let { gu, dong } = parseAddr(addr);
     if (cDong && String(r[cDong] ?? '').trim()) dong = String(r[cDong]).trim();   // 변환된 동 우선
+    if (/^\d/.test(dong)) dong = '';   // 아파트 동 번호(101동 등)는 법정동 아님 → 제외
     let lat = null, lng = null;
     if (cLat && cLng) { const y = parseFloat(r[cLat]), x = parseFloat(r[cLng]); if (isFinite(y) && isFinite(x) && y > 30 && x > 120) { lat = y; lng = x; } }
     if (lat == null && Array.isArray(S.geo[addr])) { [lat, lng] = S.geo[addr]; }
@@ -327,15 +330,10 @@ function buildFilters() {
 
   const counts = {};
   S.rows.forEach(r => counts[r.cat] = (counts[r.cat] || 0) + 1);
-  const cats = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
-  $('cats').innerHTML = cats.map(([c, n]) => `<button class="chip" data-cat="${esc(c)}">${esc(c)}<small>${fmt(n)}</small></button>`).join('');
-  $('cats').onclick = e => {
-    const b = e.target.closest('.chip'); if (!b) return;
-    const c = b.dataset.cat;
-    S.cats.has(c) ? S.cats.delete(c) : S.cats.add(c);
-    b.classList.toggle('on', S.cats.has(c));
-    apply();
-  };
+  const cats = Object.entries(counts).sort((a, b) => b[1] - a[1]);   // 등록 수 많은 순
+  $('cat').innerHTML = '<option value="">전체 업종</option>' +
+    cats.map(([c, n]) => `<option value="${esc(c)}">${esc(c)} (${fmt(n)})</option>`).join('');
+  $('cat').onchange = apply;
   $('q').oninput = debounce(apply, 200);
   $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('q').blur(); if (window.__sheetPeek) window.__sheetPeek(); } });
 }
@@ -344,7 +342,9 @@ function buildDong() {
   const sel = $('dong');
   sel.disabled = false;
   const counts = {};
-  S.rows.forEach(r => { if ((!gu || r.gu === gu) && r.dong) counts[r.dong] = (counts[r.dong] || 0) + 1; });
+  // 숫자로 된 아파트 동(101동 등)은 법정동이 아니므로 제외
+  const isReal = d => d && !/^\d/.test(d);
+  S.rows.forEach(r => { if ((!gu || r.gu === gu) && isReal(r.dong)) counts[r.dong] = (counts[r.dong] || 0) + 1; });
   const dongs = Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0], 'ko'));
   sel.innerHTML = '<option value="">전체 동</option>' +
     dongs.map(([d, n]) => `<option value="${esc(d)}">${esc(d)} (${fmt(n)})</option>`).join('');
@@ -352,10 +352,10 @@ function buildDong() {
 function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; }
 
 function apply() {
-  const q = $('q').value.trim().toLowerCase(), gu = $('gu').value, dong = $('dong').value;
+  const q = $('q').value.trim().toLowerCase(), gu = $('gu').value, dong = $('dong').value, cat = $('cat').value;
   S.filtered = S.rows.filter(r =>
     (!gu || r.gu === gu) && (!dong || r.dong === dong) &&
-    (!S.cats.size || S.cats.has(r.cat)) &&
+    (!cat || r.cat === cat) &&
     (!q || r.name.toLowerCase().includes(q) || r.addr.toLowerCase().includes(q))
   );
   if (S.myPos) {
@@ -634,7 +634,8 @@ $('startBtn').onclick = async () => {
     await loadKakao(key); store.set(KEY_KEY, key);
     if (!S.map) initMap();
     loadRows(pendingRows);
-    S.cats.clear(); S.markers.clear(); S.selId = null; closeOverlay();
+    S.markers.clear(); S.selId = null; closeOverlay();
+    if ($('cat')) $('cat').value = '';
     buildFilters(); apply();
     $('gate').style.display = 'none';
     const noGeo = S.rows.filter(r => r.lat == null).length;
