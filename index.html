@@ -353,6 +353,8 @@ function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTim
 
 function apply() {
   const q = $('q').value.trim().toLowerCase(), gu = $('gu').value, dong = $('dong').value, cat = $('cat').value;
+  const active = !!(q || gu || dong || cat);   // 하나라도 좁혔는지
+  S.active = active;
   S.filtered = S.rows.filter(r =>
     (!gu || r.gu === gu) && (!dong || r.dong === dong) &&
     (!cat || r.cat === cat) &&
@@ -380,6 +382,10 @@ function renderList(reset) {
   const el = $('list');
   if (reset) { el.innerHTML = ''; S.listShown = 0; }
   el.querySelector('.more')?.remove();
+  if (!S.active) {
+    el.innerHTML = `<div class="empty">지역·동·업종을 고르거나 위에서 검색하면<br>해당하는 가맹점이 지도와 목록에 표시됩니다.<br><br><b>${fmt(S.rows.length)}</b>곳 등록됨</div>`;
+    return;
+  }
   if (!S.filtered.length) { el.innerHTML = '<div class="empty">조건에 맞는 가맹점이 없습니다.<br>검색어나 업종을 조정해 보세요.</div>'; return; }
   const frag = document.createDocumentFragment();
   const end = Math.min(S.filtered.length, S.listShown + PAGE);
@@ -454,6 +460,7 @@ function markerFor(r) {
 function renderMarkers() {
   if (!S.clusterer) return;
   S.clusterer.clear();
+  if (!S.active) return;   // 아무것도 안 좁혔으면 핀을 그리지 않음(6만 개 방지)
   const ms = [];
   for (const r of S.filtered) if (r.lat != null) ms.push(markerFor(r));
   S.clusterer.addMarkers(ms);
@@ -616,7 +623,7 @@ async function autoLoadBundled() {
     const j = await res.json();
     // 압축 형식 {cols:[...], rows:[[...]]} → 레코드 배열로 변환
     const cols = j.cols || ['name', 'cat', 'addr'];
-    const key = { name: '업체명', cat: '업종명', addr: '업체주소', dong: '동' };
+    const key = { name: '업체명', cat: '업종명', addr: '업체주소', dong: '동', lat: '위도', lng: '경도' };
     pendingRows = j.rows.map(r => {
       const o = {}; cols.forEach((c, i) => o[key[c] || c] = r[i]); return o;
     });
@@ -638,8 +645,7 @@ $('startBtn').onclick = async () => {
     if ($('cat')) $('cat').value = '';
     buildFilters(); apply();
     $('gate').style.display = 'none';
-    const noGeo = S.rows.filter(r => r.lat == null).length;
-    if (noGeo) toast(`좌표가 없는 가맹점이 ${fmt(noGeo)}곳입니다. 지역·업종을 좁힌 뒤 '좌표 찾기'를 누르세요.`, 5000);
+    toast('지역·동·업종을 고르거나 검색하면 지도에 표시됩니다.', 4000);
   } catch (err) { $('gateErr').textContent = err.message; }
   btn.textContent = '지도 열기'; checkReady();
 };
