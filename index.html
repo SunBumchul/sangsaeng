@@ -83,7 +83,7 @@
   /* map floating */
   .float{position:absolute;z-index:5;display:flex;gap:6px}
   .float.tl{left:12px;top:12px}
-  .datebar{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:5;
+  .datebar{position:absolute;right:12px;top:12px;z-index:5;
     background:rgba(255,255,255,.94);border:1px solid var(--line);color:var(--ink-2);
     padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;
     box-shadow:0 1px 3px rgba(20,40,38,.14)}
@@ -148,7 +148,7 @@
     .ft{flex-wrap:wrap}
     /* 지도 위 버튼을 시트에 안 가리게 위로 */
     .float.tl{top:calc(10px + env(safe-area-inset-top,0px));left:10px}
-    .datebar{top:calc(10px + env(safe-area-inset-top,0px))}
+    .datebar{top:calc(10px + env(safe-area-inset-top,0px));right:10px}
   }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -462,7 +462,7 @@ let imgNormal, imgSel;
 function initMap() {
   const center = new kakao.maps.LatLng(35.1595, 126.8526);
   S.map = new kakao.maps.Map($('kakaoMap'), { center, level: 7 });
-  S.map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.RIGHT);
+  S.map.addControl(new kakao.maps.ZoomControl(), kakao.maps.ControlPosition.BOTTOMRIGHT);
   S.geocoder = new kakao.maps.services.Geocoder();
   S.places = new kakao.maps.services.Places();
   S.clusterer = new kakao.maps.MarkerClusterer({ map: S.map, averageCenter: true, minLevel: 5, gridSize: 70,
