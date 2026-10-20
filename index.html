@@ -104,7 +104,7 @@
   .bub a:hover{background:var(--teal-soft)}
 
   /* setup gate */
-  #gate{position:absolute;inset:0;z-index:20;background:rgba(247,248,245,.96);display:flex;align-items:center;justify-content:center;padding:24px;overflow:auto}
+  #gate{position:absolute;inset:0;z-index:20;background:rgba(247,248,245,.96);display:none;align-items:center;justify-content:center;padding:24px;overflow:auto}
   .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 28px;max-width:560px;width:100%;box-shadow:0 10px 30px rgba(20,40,38,.12)}
   .card h2{margin:0 0 4px;font-size:18px}
   .card p{margin:0 0 14px;color:var(--ink-2);font-size:13px}
@@ -244,6 +244,9 @@ const store = {
 };
 const GEO_KEY = 'ssc_geocache_v1';
 const KEY_KEY = 'ssc_kakao_jskey';
+// 기본 카카오 JavaScript 키(앱에 내장). sunbumchul.github.io 도메인에서만 동작하도록 카카오에 제한됨.
+// 저장된 키가 있으면 그걸 우선 사용.
+const DEFAULT_JS_KEY = 'c8ab1e5c7548e9e476818066ac2b5ab3';
 
 /* ---------- state ---------- */
 const S = {
@@ -663,21 +666,39 @@ async function autoLoadBundled() {
     return true;
   } catch { return false; }
 }
-autoLoadBundled();
+// 지도 진입(키 입력/버튼 공용). 성공 시 true.
+async function enterMap(key, showToast) {
+  await loadKakao(key); store.set(KEY_KEY, key);
+  if (!S.map) initMap();
+  loadRows(pendingRows);
+  S.markers.clear(); S.selId = null; closeOverlay();
+  if ($('cat')) $('cat').value = '';
+  buildFilters(); apply();
+  $('gate').style.display = 'none';
+  showDateBar();
+  if (showToast) toast('지역·동·업종을 고르거나 검색하면 지도에 표시됩니다.', 4000);
+}
+
+// 열자마자 바로 지도: 데이터가 자동 로드되면 내장(또는 저장) 키로 시작화면을 건너뛴다.
+async function autoStart() {
+  const ok = await autoLoadBundled();        // sangsaeng_data.json 자동 로드
+  const key = store.get(KEY_KEY) || DEFAULT_JS_KEY;
+  if (ok && pendingRows && key) {
+    try { await enterMap(key, true); return; }
+    catch (e) { /* 키/네트워크 문제 시 아래 시작화면으로 폴백 */ $('gateErr').textContent = (e && e.message) || '지도를 불러오지 못했습니다.'; }
+  }
+  // 폴백: 데이터나 키가 없으면 기존 시작화면 노출
+  $('gate').style.display = 'flex';
+  if (!$('appkey').value) $('appkey').value = key || '';
+  checkReady();
+}
+autoStart();
+
 $('startBtn').onclick = async () => {
-  const key = $('appkey').value.trim(); const btn = $('startBtn');
+  const key = $('appkey').value.trim() || DEFAULT_JS_KEY; const btn = $('startBtn');
   btn.disabled = true; btn.textContent = '불러오는 중…'; $('gateErr').textContent = '';
-  try {
-    await loadKakao(key); store.set(KEY_KEY, key);
-    if (!S.map) initMap();
-    loadRows(pendingRows);
-    S.markers.clear(); S.selId = null; closeOverlay();
-    if ($('cat')) $('cat').value = '';
-    buildFilters(); apply();
-    $('gate').style.display = 'none';
-    showDateBar();
-    toast('지역·동·업종을 고르거나 검색하면 지도에 표시됩니다.', 4000);
-  } catch (err) { $('gateErr').textContent = err.message; }
+  try { await enterMap(key, true); }
+  catch (err) { $('gateErr').textContent = err.message; }
   btn.textContent = '지도 열기'; checkReady();
 };
 
